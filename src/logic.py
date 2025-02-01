@@ -9,8 +9,8 @@ import asyncio
 
 # Импортируем модули из текущей директории
 from settings import BOT_TOKEN, CHANNEL_ID
-from text import WELCOME_MESSAGE, REGISTRATION_NAME, REGISTRATION_AGE, REGISTRATION_SUCCESS, POST_MESSAGE, POST_SUCCESS, VOLUNTEER_LINK, PSYCHOLOGIST_LINK
-from menu import main_menu
+from text import WELCOME_MESSAGE, REGISTRATION_NAME, REGISTRATION_AGE, REGISTRATION_SUCCESS, POST_MESSAGE, POST_SUCCESS, VOLUNTEER_LINK, PSYCHOLOGIST_LINK, CANCEL_MESSAGE
+from menu import main_menu, cancel_menu
 from bd import save_user, save_post, is_user_registered
 
 # Инициализация бота
@@ -38,7 +38,7 @@ sent_media_groups = set()
 media_groups_lock = asyncio.Lock()
 
 # Обработчик команды /start
-@dp.message(Command("start"))
+@dp.message(Command("start")) # Команда обрабатывается после символа "/"
 async def start(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     if is_user_registered(user_id):
@@ -74,8 +74,14 @@ async def publish_post(message: types.Message, state: FSMContext):
     if not is_user_registered(user_id):
         await message.answer("Пожалуйста, завершите регистрацию, чтобы опубликовать пост.")
         return
-    await message.answer(POST_MESSAGE)
+    await message.answer(POST_MESSAGE, reply_markup=cancel_menu)
     await state.set_state(Registration.post)
+
+# Обработчик кнопки "Отмена"
+@dp.message(lambda message: message.text == "Отмена", Registration.post)
+async def cancel_post(message: types.Message, state: FSMContext):
+    await message.answer(CANCEL_MESSAGE, reply_markup=main_menu)
+    await state.clear()  # Очистка состояния
 
 # Обработчик текстового поста
 @dp.message(Registration.post, lambda message: message.text)
