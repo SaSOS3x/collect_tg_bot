@@ -12,6 +12,8 @@ from settings import BOT_TOKEN, CHANNEL_ID
 from text import WELCOME_MESSAGE, REGISTRATION_NAME, REGISTRATION_AGE, REGISTRATION_SUCCESS, POST_MESSAGE, POST_SUCCESS, VOLUNTEER_LINK, PSYCHOLOGIST_LINK, CANCEL_MESSAGE
 from menu import main_menu, cancel_menu
 from bd import save_user, save_post, is_user_registered
+from buttons import inline_kb_full_example
+from utils import split_text
 
 # Инициализация бота
 bot = Bot(token=BOT_TOKEN)
@@ -88,7 +90,13 @@ async def cancel_post(message: types.Message, state: FSMContext):
 async def process_post(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     save_post(user_id, message.text)
-    await bot.send_message(CHANNEL_ID, f"Новый пост от {message.from_user.full_name}:\n\n{message.text}")
+
+    text_link = await split_text(message.text)
+    
+    await bot.send_message(CHANNEL_ID,
+                           f"Новый пост от {message.from_user.full_name}:\n\n{text_link[0]}",
+                           reply_markup= await inline_kb_full_example(message.from_user.username, text_link[1]))
+    
     await message.answer(POST_SUCCESS, reply_markup=main_menu)
     await state.clear()  # Очистка состояния
 
@@ -97,6 +105,8 @@ async def process_post(message: types.Message, state: FSMContext):
 async def process_media_group(message: types.Message, state: FSMContext):
     media_group_id = message.media_group_id
     user_id = message.from_user.id
+
+    username = message.from_user.username
 
     async with media_groups_lock:
         # Если медиагруппа уже отправлена, игнорируем
@@ -121,15 +131,17 @@ async def process_media_group(message: types.Message, state: FSMContext):
                 InputMediaDocument(media=message.document.file_id)
             )
 
+        text_link = await split_text(message.caption)
+
         # Если это первое сообщение в медиагруппе, сохраняем подпись
         if message.caption:
-            media_groups[media_group_id][-1].caption = f"Новый пост от {message.from_user.full_name}:\n\n{message.caption}"
+            media_groups[media_group_id][-1].caption = f"Новый пост от {message.from_user.full_name}:\n\n{text_link[0]}"
 
     # Запускаем таймер для отправки медиагруппы
-    asyncio.create_task(send_media_group_after_delay(media_group_id, user_id, state))
+    asyncio.create_task(send_media_group_after_delay(media_group_id, user_id, state, text_link[1], username))
 
 # Функция для отправки медиагруппы после задержки
-async def send_media_group_after_delay(media_group_id, user_id, state):
+async def send_media_group_after_delay(media_group_id, user_id, state, link, username):
     # Ждем 2 секунды перед отправкой
     await asyncio.sleep(2)
 
@@ -146,6 +158,14 @@ async def send_media_group_after_delay(media_group_id, user_id, state):
                 CHANNEL_ID,
                 media=media_list
             )
+
+            # Отправляем кнопки отдельным сообщением
+            await bot.send_message(
+                chat_id=CHANNEL_ID,
+                text="Дополнительные действия:",
+                reply_markup = await inline_kb_full_example(username, link) # Кнопки
+            )
+
             save_post(user_id, f"Медиагруппа: {len(media_list)} файлов")
             await bot.send_message(user_id, POST_SUCCESS, reply_markup=main_menu)
             await state.clear()  # Очистка состояния
@@ -163,7 +183,11 @@ async def process_photo(message: types.Message, state: FSMContext):
     photo_id = message.photo[-1].file_id  # Берем самое большое фото
     caption = message.caption if message.caption else "Фото без подписи"
     save_post(user_id, f"Фото: {caption}")
-    await bot.send_photo(CHANNEL_ID, photo_id, caption=f"Новый пост от {message.from_user.full_name}:\n\n{caption}")
+
+    text_link = await split_text(message.caption)
+
+    await bot.send_photo(CHANNEL_ID, photo_id, caption=f"Новый пост от {message.from_user.full_name}:\n\n{text_link[0]}",
+                         reply_markup= await inline_kb_full_example(message.from_user.username, text_link[1]))
     await message.answer(POST_SUCCESS, reply_markup=main_menu)
     await state.clear()  # Очистка состояния
 
@@ -174,7 +198,12 @@ async def process_video(message: types.Message, state: FSMContext):
     video_id = message.video.file_id
     caption = message.caption if message.caption else "Видео без подписи"
     save_post(user_id, f"Видео: {caption}")
-    await bot.send_video(CHANNEL_ID, video_id, caption=f"Новый пост от {message.from_user.full_name}:\n\n{caption}")
+
+    text_link = await split_text(message.caption)
+
+    await bot.send_video(CHANNEL_ID, video_id, caption=f"Новый пост от {message.from_user.full_name}:\n\n{text_link[0]}",
+                         reply_markup= await inline_kb_full_example(message.from_user.username, text_link[1]))
+    
     await message.answer(POST_SUCCESS, reply_markup=main_menu)
     await state.clear()  # Очистка состояния
 
@@ -185,7 +214,12 @@ async def process_document(message: types.Message, state: FSMContext):
     document_id = message.document.file_id
     caption = message.caption if message.caption else "Документ без подписи"
     save_post(user_id, f"Документ: {caption}")
-    await bot.send_document(CHANNEL_ID, document_id, caption=f"Новый пост от {message.from_user.full_name}:\n\n{caption}")
+
+    text_link = await split_text(message.caption)
+
+    await bot.send_document(CHANNEL_ID, document_id, caption=f"Новый пост от {message.from_user.full_name}:\n\n{text_link[0]}",
+                            reply_markup= await inline_kb_full_example(message.from_user.username, text_link[1]))
+    
     await message.answer(POST_SUCCESS, reply_markup=main_menu)
     await state.clear()  # Очистка состояния
 
@@ -196,7 +230,12 @@ async def process_voice(message: types.Message, state: FSMContext):
     voice_id = message.voice.file_id
     caption = message.caption if message.caption else "Голосовое сообщение"
     save_post(user_id, f"Голосовое сообщение: {caption}")
-    await bot.send_voice(CHANNEL_ID, voice_id, caption=f"Новый пост от {message.from_user.full_name}:\n\n{caption}")
+
+    text_link = await split_text(message.caption)
+
+    await bot.send_voice(CHANNEL_ID, voice_id, caption=f"Новый пост от {message.from_user.full_name}:\n\n{text_link[0]}",
+                         reply_markup= await inline_kb_full_example(message.from_user.username, text_link[1]))
+    
     await message.answer(POST_SUCCESS, reply_markup=main_menu)
     await state.clear()  # Очистка состояния
 
@@ -207,7 +246,12 @@ async def process_voice(message: types.Message, state: FSMContext):
     audio_id = message.audio.file_id
     caption = message.caption if message.caption else "Музыка / Аудио"
     save_post(user_id, f"Музыка / Аудио: {caption}")
-    await bot.send_audio(CHANNEL_ID, audio_id, caption=f"Новый пост от {message.from_user.full_name}:\n\n{caption}")
+
+    text_link = await split_text(message.caption)
+
+    await bot.send_audio(CHANNEL_ID, audio_id, caption=f"Новый пост от {message.from_user.full_name}:\n\n{text_link[0]}",
+                         reply_markup= await inline_kb_full_example(message.from_user.username, text_link[1]))
+    
     await message.answer(POST_SUCCESS, reply_markup=main_menu)
     await state.clear()  # Очистка состояния
 
