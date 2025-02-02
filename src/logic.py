@@ -9,9 +9,10 @@ import asyncio
 
 # Импортируем модули из текущей директории
 from settings import BOT_TOKEN, CHANNEL_ID
-from text import WELCOME_MESSAGE, REGISTRATION_NAME, REGISTRATION_AGE, REGISTRATION_SUCCESS, POST_MESSAGE, POST_SUCCESS, VOLUNTEER_LINK, PSYCHOLOGIST_LINK, CANCEL_MESSAGE
+from text import WELCOME_MESSAGE, REGISTRATION_NAME, REGISTRATION_SUCCESS, POST_MESSAGE, POST_SUCCESS, CANCEL_MESSAGE
 from menu import main_menu, cancel_menu
-from bd import save_user, save_post, is_user_registered
+from bd import save_user, save_post, is_user_registered, get_username
+from utils import default_post_text
 
 # Инициализация бота
 bot = Bot(token=BOT_TOKEN)
@@ -25,7 +26,6 @@ logging.basicConfig(level=logging.INFO)
 # Состояния для регистрации
 class Registration(StatesGroup):
     name = State()
-    age = State()
     post = State()
 
 # Хранение медиагрупп
@@ -41,7 +41,7 @@ media_groups_lock = asyncio.Lock()
 @dp.message(Command("start")) # Команда обрабатывается после символа "/"
 async def start(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
-    if is_user_registered(user_id):
+    if await is_user_registered(user_id):
         await message.answer("Вы уже зарегистрированы! Что вы хотите сделать?", reply_markup=main_menu)
     else:
         await message.answer(WELCOME_MESSAGE)
@@ -52,26 +52,21 @@ async def start(message: types.Message, state: FSMContext):
 @dp.message(Registration.name)
 async def process_name(message: types.Message, state: FSMContext):
     await state.update_data(name=message.text)
-    await message.answer(REGISTRATION_AGE)
-    await state.set_state(Registration.age)
 
-# Обработчик ввода возраста
-@dp.message(Registration.age)
-async def process_age(message: types.Message, state: FSMContext):
-    if message.text.isdigit() and 12 <= int(message.text) <= 25:
-        user_id = message.from_user.id
-        user_data = await state.get_data()
-        save_user(user_id, user_data['name'], int(message.text))
-        await message.answer(REGISTRATION_SUCCESS, reply_markup=main_menu)
-        await state.clear()  # Очистка состояния
-    else:
-        await message.answer("Пожалуйста, введите возраст от 12 до 25 лет.")
+    user_id = message.from_user.id
+    user_data = await state.get_data()
+
+    await save_user(user_id, user_data['name'])
+
+    await message.answer(REGISTRATION_SUCCESS, reply_markup=main_menu)
+
+    await state.clear()  # Очистка состояния
 
 # Обработчик кнопки "Опубликовать пост"
 @dp.message(lambda message: message.text == "Опубликовать пост")
 async def publish_post(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
-    if not is_user_registered(user_id):
+    if not await is_user_registered(user_id):
         await message.answer("Пожалуйста, завершите регистрацию, чтобы опубликовать пост.")
         return
     await message.answer(POST_MESSAGE, reply_markup=cancel_menu)
@@ -83,20 +78,31 @@ async def cancel_post(message: types.Message, state: FSMContext):
     await message.answer(CANCEL_MESSAGE, reply_markup=main_menu)
     await state.clear()  # Очистка состояния
 
+
+
 # Обработчик текстового поста
 @dp.message(Registration.post, lambda message: message.text)
 async def process_post(message: types.Message, state: FSMContext):
+
     user_id = message.from_user.id
-    save_post(user_id, message.text)
-    await bot.send_message(CHANNEL_ID, f"Новый пост от {message.from_user.full_name}:\n\n{message.text}")
+    user_login = message.from_user.username
+    
+    message_from_chat = await bot.send_message(CHANNEL_ID, await default_post_text(await get_username(user_id), user_login, message.text), parse_mode="HTML") # Отправка сообщения с обработчиком default_post_text
+
+    await save_post(user_id, message.text, message_from_chat.message_id)
+
     await message.answer(POST_SUCCESS, reply_markup=main_menu)
     await state.clear()  # Очистка состояния
+
+
 
 # Обработчик медиагрупп (несколько фото/видео)
 @dp.message(Registration.post, lambda message: message.media_group_id)
 async def process_media_group(message: types.Message, state: FSMContext):
     media_group_id = message.media_group_id
     user_id = message.from_user.id
+
+    user_login = message.from_user.username
 
     async with media_groups_lock:
         # Если медиагруппа уже отправлена, игнорируем
@@ -120,10 +126,11 @@ async def process_media_group(message: types.Message, state: FSMContext):
             media_groups[media_group_id].append(
                 InputMediaDocument(media=message.document.file_id)
             )
-
+        message.caption
         # Если это первое сообщение в медиагруппе, сохраняем подпись
         if message.caption:
-            media_groups[media_group_id][-1].caption = f"Новый пост от {message.from_user.full_name}:\n\n{message.caption}"
+            media_groups[media_group_id][-1].caption = await default_post_text(await get_username(user_id), user_login, message.caption)
+            media_groups[media_group_id][-1].parse_mode = "HTML"
 
     # Запускаем таймер для отправки медиагруппы
     asyncio.create_task(send_media_group_after_delay(media_group_id, user_id, state))
@@ -144,10 +151,13 @@ async def send_media_group_after_delay(media_group_id, user_id, state):
 
             await bot.send_media_group(
                 CHANNEL_ID,
-                media=media_list
+                media=media_list,
             )
-            save_post(user_id, f"Медиагруппа: {len(media_list)} файлов")
-            await bot.send_message(user_id, POST_SUCCESS, reply_markup=main_menu)
+            
+            message_from_chat = await bot.send_message(user_id, POST_SUCCESS, reply_markup=main_menu)
+
+            await save_post(user_id, f"Медиагруппа: {len(media_list)} файлов", message_from_chat.message_id)
+
             await state.clear()  # Очистка состояния
 
             # Помечаем медиагруппу как отправленную
@@ -155,6 +165,8 @@ async def send_media_group_after_delay(media_group_id, user_id, state):
 
             # Удаляем медиагруппу из хранилища
             del media_groups[media_group_id]
+
+
 
 # Обработчик одиночных фото
 @dp.message(Registration.post, lambda message: message.photo and not message.media_group_id)
@@ -210,13 +222,3 @@ async def process_voice(message: types.Message, state: FSMContext):
     await bot.send_audio(CHANNEL_ID, audio_id, caption=f"Новый пост от {message.from_user.full_name}:\n\n{caption}")
     await message.answer(POST_SUCCESS, reply_markup=main_menu)
     await state.clear()  # Очистка состояния
-
-# Обработчик кнопки "Связь с проектом"
-@dp.message(lambda message: message.text == "Связь с проектом")
-async def contact_project(message: types.Message):
-    await message.answer(VOLUNTEER_LINK)
-
-# Обработчик кнопки "Стать волонтёром/психологом"
-@dp.message(lambda message: message.text == "Стать волонтёром/психологом")
-async def become_volunteer(message: types.Message):
-    await message.answer(PSYCHOLOGIST_LINK)

@@ -1,45 +1,48 @@
-import sqlite3
+import aiosqlite
 
-def init_db():
-    conn = sqlite3.connect('bot.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL UNIQUE,
-            name TEXT NOT NULL,
-            age INTEGER NOT NULL
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS posts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            message TEXT NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users (user_id)
-        )
-    ''')
-    conn.commit()
-    conn.close()
+async def init_db():
+    async with aiosqlite.connect('bot.db') as conn:
+        cursor = await conn.cursor()
+        await cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL UNIQUE,
+                name TEXT NOT NULL
+            )
+        ''')
+        await cursor.execute('''
+            CREATE TABLE IF NOT EXISTS posts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                message TEXT NOT NULL,
+                message_id INTEGER NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users (user_id)
+            )
+        ''')
+        await conn.commit()
 
-def save_user(user_id, name, age):
-    conn = sqlite3.connect('bot.db')
-    cursor = conn.cursor()
-    cursor.execute('INSERT INTO users (user_id, name, age) VALUES (?, ?, ?)', (user_id, name, age))
-    conn.commit()
-    conn.close()
+async def save_user(user_id, name):
+    async with aiosqlite.connect('bot.db') as conn:
+        cursor = await conn.cursor()
+        await cursor.execute('INSERT INTO users (user_id, name) VALUES (?, ?)', (user_id, name))
+        await conn.commit()
 
-def save_post(user_id, message):
-    conn = sqlite3.connect('bot.db')
-    cursor = conn.cursor()
-    cursor.execute('INSERT INTO posts (user_id, message) VALUES (?, ?)', (user_id, message))
-    conn.commit()
-    conn.close()
+async def save_post(user_id, message, message_id):
+    async with aiosqlite.connect('bot.db') as conn:
+        cursor = await conn.cursor()
+        await cursor.execute('INSERT INTO posts (user_id, message, message_id) VALUES (?, ?, ?)', (user_id, message, 0))
+        await conn.commit()
 
-def is_user_registered(user_id):
-    conn = sqlite3.connect('bot.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT user_id FROM users WHERE user_id = ?', (user_id,))
-    result = cursor.fetchone()
-    conn.close()
-    return result is not None
+async def is_user_registered(user_id):
+    async with aiosqlite.connect('bot.db') as conn:
+        cursor = await conn.cursor()
+        await cursor.execute('SELECT user_id FROM users WHERE user_id = ?', (user_id,))
+        result = await cursor.fetchone()
+        return result is not None
+
+async def get_username(user_id):
+    async with aiosqlite.connect('bot.db') as conn:
+        cursor = await conn.cursor()
+        await cursor.execute('SELECT name FROM users WHERE user_id = ?', (user_id,))
+        result = await cursor.fetchone()
+        return result[0] if result else None
