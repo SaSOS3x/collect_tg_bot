@@ -11,7 +11,7 @@ import asyncio
 from settings import BOT_TOKEN, CHANNEL_ID
 from text import WELCOME_MESSAGE, REGISTRATION_NAME, REGISTRATION_SUCCESS, POST_MESSAGE, POST_SUCCESS, CANCEL_MESSAGE
 from menu import main_menu, cancel_menu
-from bd import save_user, save_post, is_user_registered, get_username
+from bd import save_user, save_post, is_user_registered, get_username, update_user
 from utils import default_post_text
 
 # Инициализация бота
@@ -27,6 +27,10 @@ logging.basicConfig(level=logging.INFO)
 class Registration(StatesGroup):
     name = State()
     post = State()
+
+# Добавим новое состояние для смены имени
+class ChangeName(StatesGroup):
+    name = State()
 
 # Хранение медиагрупп
 media_groups = defaultdict(list)
@@ -58,9 +62,45 @@ async def process_name(message: types.Message, state: FSMContext):
 
     await save_user(user_id, user_data['name'])
 
+    logging.info(f"Create new user: {user_id} with name: {user_data['name']}")
+
     await message.answer(REGISTRATION_SUCCESS, reply_markup=main_menu)
 
     await state.clear()  # Очистка состояния
+
+
+
+# Новый обработчик кнопки "Изменить имя"
+@dp.message(lambda message: message.text == "Изменить имя")
+async def change_name_start(message: types.Message, state: FSMContext):
+    if not await is_user_registered(message.from_user.id):
+        await message.answer("Сначала зарегистрируйтесь!")
+        return
+        
+    await message.answer("Введите новое имя:", reply_markup=cancel_menu)
+    await state.set_state(ChangeName.name)
+
+# Обработчик отмены для нового состояния
+@dp.message(lambda message: message.text == "Отмена", ChangeName.name)
+async def cancel_name_change(message: types.Message, state: FSMContext):
+    await message.answer("Изменение имени отменено", reply_markup=main_menu)
+    await state.clear()
+
+# Обработчик нового имени
+@dp.message(ChangeName.name)
+async def process_new_name(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    new_name = message.text
+    
+    # Обновляем имя в БД
+    await update_user(user_id, new_name)
+    
+    logging.info(f"User {user_id} changed name to {new_name}")
+
+    await message.answer(f"Имя успешно изменено на: {new_name}", reply_markup=main_menu)
+    await state.clear()
+    
+
 
 # Обработчик кнопки "Опубликовать пост"
 @dp.message(lambda message: message.text == "Опубликовать пост")
@@ -88,6 +128,8 @@ async def process_post(message: types.Message, state: FSMContext):
     user_login = message.from_user.username
     
     message_from_chat = await bot.send_message(CHANNEL_ID, await default_post_text(await get_username(user_id), user_login, message.text), parse_mode="HTML") # Отправка сообщения с обработчиком default_post_text
+
+    logging.info(f"User {user_id} created new post in channel: {CHANNEL_ID}")
 
     await save_post(user_id, message.text, message_from_chat.message_id)
 
