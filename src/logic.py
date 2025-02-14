@@ -215,10 +215,18 @@ async def send_media_group_after_delay(media_group_id, user_id, state):
 async def process_photo(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     photo_id = message.photo[-1].file_id  # Берем самое большое фото
+    user_login = message.from_user.username
+
     caption = message.caption if message.caption else "Фото без подписи"
-    save_post(user_id, f"Фото: {caption}")
-    await bot.send_photo(CHANNEL_ID, photo_id, caption=f"Новый пост от {message.from_user.full_name}:\n\n{caption}")
+    
+    message_from_chat = await bot.send_photo(CHANNEL_ID, photo_id, caption = await default_post_text(await get_username(user_id), user_login, caption), parse_mode="HTML") # Отправка сообщения с обработчиком default_post_text
+
+    save_post(user_id, f"Фото: {caption}", message_from_chat.message_id)
+
+    logging.info(f"User {user_id} created new photo-post in channel: {CHANNEL_ID}")
+    
     await message.answer(POST_SUCCESS, reply_markup=main_menu)
+
     await state.clear()  # Очистка состояния
 
 # Обработчик одиночных видео
@@ -227,8 +235,13 @@ async def process_video(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     video_id = message.video.file_id
     caption = message.caption if message.caption else "Видео без подписи"
-    save_post(user_id, f"Видео: {caption}")
-    await bot.send_video(CHANNEL_ID, video_id, caption=f"Новый пост от {message.from_user.full_name}:\n\n{caption}")
+
+    user_login = message.from_user.username
+
+    message_from_chat = await bot.send_video(CHANNEL_ID, video_id, caption = await default_post_text(await get_username(user_id), user_login, caption), parse_mode="HTML")
+
+    save_post(user_id, f"Видео: {caption}", message_from_chat.message_id)
+    
     await message.answer(POST_SUCCESS, reply_markup=main_menu)
     await state.clear()  # Очистка состояния
 
@@ -237,9 +250,15 @@ async def process_video(message: types.Message, state: FSMContext):
 async def process_document(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     document_id = message.document.file_id
+
+    user_login = message.from_user.username
+
     caption = message.caption if message.caption else "Документ без подписи"
-    save_post(user_id, f"Документ: {caption}")
-    await bot.send_document(CHANNEL_ID, document_id, caption=f"Новый пост от {message.from_user.full_name}:\n\n{caption}")
+
+    message_from_chat = await bot.send_document(CHANNEL_ID, document_id, caption = await default_post_text(await get_username(user_id), user_login, caption), parse_mode="HTML")
+
+    save_post(user_id, f"Документ: {caption}", message_from_chat.message_id)
+
     await message.answer(POST_SUCCESS, reply_markup=main_menu)
     await state.clear()  # Очистка состояния
 
@@ -248,9 +267,15 @@ async def process_document(message: types.Message, state: FSMContext):
 async def process_voice(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     voice_id = message.voice.file_id
+
+    user_login = message.from_user.username
+
     caption = message.caption if message.caption else "Голосовое сообщение"
-    save_post(user_id, f"Голосовое сообщение: {caption}")
-    await bot.send_voice(CHANNEL_ID, voice_id, caption=f"Новый пост от {message.from_user.full_name}:\n\n{caption}")
+
+    message_from_chat = await bot.send_voice(CHANNEL_ID, voice_id, caption = await default_post_text(await get_username(user_id), user_login, caption), parse_mode="HTML")
+
+    save_post(user_id, f"Голосовое сообщение: {caption}", message_from_chat.message_id)
+
     await message.answer(POST_SUCCESS, reply_markup=main_menu)
     await state.clear()  # Очистка состояния
 
@@ -259,8 +284,14 @@ async def process_voice(message: types.Message, state: FSMContext):
 async def process_voice(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     audio_id = message.audio.file_id
+
+    user_login = message.from_user.username
+
     caption = message.caption if message.caption else "Музыка / Аудио"
-    save_post(user_id, f"Музыка / Аудио: {caption}")
-    await bot.send_audio(CHANNEL_ID, audio_id, caption=f"Новый пост от {message.from_user.full_name}:\n\n{caption}")
+
+    message_from_chat = await bot.send_audio(CHANNEL_ID, audio_id, caption = await default_post_text(await get_username(user_id), user_login, caption), parse_mode="HTML")
+
+    save_post(user_id, f"Музыка / Аудио: {caption}", message_from_chat.message_id)
+
     await message.answer(POST_SUCCESS, reply_markup=main_menu)
     await state.clear()  # Очистка состояния
